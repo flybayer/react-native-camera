@@ -71,6 +71,7 @@ typedef NS_ENUM(NSInteger, RCTCameraTorchMode) {
 @property (nonatomic, assign) NSInteger videoTarget;
 @property (nonatomic, assign) NSInteger orientation;
 @property (nonatomic, assign) BOOL mirrorImage;
+@property (nonatomic, assign) BOOL isConfiguring;
 @property (nonatomic, strong) NSArray* barCodeTypes;
 @property (nonatomic, strong) RCTPromiseResolveBlock videoResolve;
 @property (nonatomic, strong) RCTPromiseRejectBlock videoReject;
@@ -88,6 +89,7 @@ typedef NS_ENUM(NSInteger, RCTCameraTorchMode) {
 - (void)stopSession;
 - (void)focusAtThePoint:(CGPoint) atPoint;
 - (void)zoom:(CGFloat)velocity reactTag:(NSNumber *)reactTag;
+- (void)sessionRuntimeError:(NSNotification *)notification;
 
 
 @end

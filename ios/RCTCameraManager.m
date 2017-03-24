@@ -209,6 +209,7 @@ RCT_CUSTOM_VIEW_PROPERTY(type, NSInteger, RCTCamera) {
         return;
       }
 
+      self.isConfiguring = true;
       [self.session beginConfiguration];
 
       [self.session removeInput:self.videoCaptureDeviceInput];
@@ -229,6 +230,7 @@ RCT_CUSTOM_VIEW_PROPERTY(type, NSInteger, RCTCamera) {
       }
 
       [self.session commitConfiguration];
+      self.isConfiguring = false;
     });
   }
   [self initializeCaptureSessionInput:AVMediaTypeVideo];
@@ -312,6 +314,7 @@ RCT_CUSTOM_VIEW_PROPERTY(captureAudio, BOOL, RCTCamera) {
 - (id)init {
   if ((self = [super init])) {
     self.mirrorImage = false;
+    self.isConfiguring = false;
 
     self.sessionQueue = dispatch_queue_create("cameraManagerQueue", DISPATCH_QUEUE_SERIAL);
 
@@ -449,16 +452,53 @@ RCT_EXPORT_METHOD(hasFlash:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRej
       self.metadataOutput = metadataOutput;
     }
 
-    __weak RCTCameraManager *weakSelf = self;
-    [self setRuntimeErrorHandlingObserver:[NSNotificationCenter.defaultCenter addObserverForName:AVCaptureSessionRuntimeErrorNotification object:self.session queue:nil usingBlock:^(NSNotification *note) {
-      RCTCameraManager *strongSelf = weakSelf;
-      dispatch_async(strongSelf.sessionQueue, ^{
-        // Manually restarting the session since it must have been stopped due to an error.
-        [strongSelf.session startRunning];
-      });
-    }]];
+    /*
+       The session might fail to start running, e.g., if a phone or FaceTime call is still
+       using audio or video. A failure to start the session running will be communicated via
+       a session runtime error notification.
+       From: https://developer.apple.com/library/content/samplecode/AVCam/Listings/Objective_C_AVCam_AVCamCameraViewController_m.html#//apple_ref/doc/uid/DTS40010112-Objective_C_AVCam_AVCamCameraViewController_m-DontLinkElementID_7
+      */
+
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(sessionRuntimeError:) name:AVCaptureSessionRuntimeErrorNotification object:self.session];
+    /* [self setRuntimeErrorHandlingObserver:[NSNotificationCenter.defaultCenter addObserverForName:AVCaptureSessionRuntimeErrorNotification selector:@selector(sessionRuntimeError:) object:self.session queue:nil]]; */
+
+    /* __weak RCTCameraManager *weakSelf = self; */
+    /* [self setRuntimeErrorHandlingObserver:[NSNotificationCenter.defaultCenter addObserverForName:AVCaptureSessionRuntimeErrorNotification object:self.session queue:nil usingBlock:^(NSNotification *note) { */
+    /*   RCTCameraManager *strongSelf = weakSelf; */
+    /*   dispatch_async(strongSelf.sessionQueue, ^{ */
+    /*     // Ensure startRunning isn't called between calls to beginConfiguration and commitConfiguration */
+    /*     // Issue #604 */
+    /*     if (strongSelf.isConfiguring) { */
+    /*       //TODO ADD new dispatch here */
+    /*     } else { */
+    /*       // Manually restarting the session since it must have been stopped due to an error. */
+    /*       [strongSelf.session startRunning]; */
+    /*     } */
+    /*   }); */
+    /* }]]; */
 
     [self.session startRunning];
+  });
+}
+
+- (void)sessionRuntimeError:(NSNotification *)notification
+{
+  NSError *error = notification.userInfo[AVCaptureSessionErrorKey];
+  NSLog( @"Capture session runtime error: %@", error );
+
+  /*
+     Automatically try to restart the session running if media services were
+     reset and the last start running succeeded. Otherwise, enable the user
+     to try to resume the session running.
+     */
+  dispatch_async(self.sessionQueue, ^{
+    if (self.isConfiguring) {
+      // In the middle of configuration, so dispatch another action
+      [self sessionRuntimeError:notification];
+    } else {
+      // Manually restarting the session since it must have been stopped due to an error.
+      [self.session startRunning];
+    }
   });
 }
 
@@ -471,6 +511,7 @@ RCT_EXPORT_METHOD(hasFlash:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRej
     self.camera = nil;
     [self.previewLayer removeFromSuperlayer];
     [self.session commitConfiguration];
+    self.isConfiguring = false;
     [self.session stopRunning];
     for(AVCaptureInput *input in self.session.inputs) {
       [self.session removeInput:input];
@@ -493,6 +534,7 @@ RCT_EXPORT_METHOD(hasFlash:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRej
       }
     }
 
+    self.isConfiguring = true;
     [self.session beginConfiguration];
 
     NSError *error = nil;
@@ -534,6 +576,7 @@ RCT_EXPORT_METHOD(hasFlash:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRej
     }
 
     [self.session commitConfiguration];
+    self.isConfiguring = false;
   });
 }
 
@@ -1022,11 +1065,13 @@ didFinishRecordingToOutputFileAtURL:(NSURL *)outputFileURL
 {
     #if !(TARGET_IPHONE_SIMULATOR)
         if (quality) {
+            self.isConfiguring = true;
             [self.session beginConfiguration];
             if ([self.session canSetSessionPreset:quality]) {
                 self.session.sessionPreset = quality;
             }
             [self.session commitConfiguration];
+            self.isConfiguring = false;
         }
     #endif
 }
