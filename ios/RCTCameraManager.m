@@ -460,24 +460,14 @@ RCT_EXPORT_METHOD(hasFlash:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRej
       */
 
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(sessionRuntimeError:) name:AVCaptureSessionRuntimeErrorNotification object:self.session];
-    /* [self setRuntimeErrorHandlingObserver:[NSNotificationCenter.defaultCenter addObserverForName:AVCaptureSessionRuntimeErrorNotification selector:@selector(sessionRuntimeError:) object:self.session queue:nil]]; */
 
-    /* __weak RCTCameraManager *weakSelf = self; */
-    /* [self setRuntimeErrorHandlingObserver:[NSNotificationCenter.defaultCenter addObserverForName:AVCaptureSessionRuntimeErrorNotification object:self.session queue:nil usingBlock:^(NSNotification *note) { */
-    /*   RCTCameraManager *strongSelf = weakSelf; */
-    /*   dispatch_async(strongSelf.sessionQueue, ^{ */
-    /*     // Ensure startRunning isn't called between calls to beginConfiguration and commitConfiguration */
-    /*     // Issue #604 */
-    /*     if (strongSelf.isConfiguring) { */
-    /*       //TODO ADD new dispatch here */
-    /*     } else { */
-    /*       // Manually restarting the session since it must have been stopped due to an error. */
-    /*       [strongSelf.session startRunning]; */
-    /*     } */
-    /*   }); */
-    /* }]]; */
-
-    [self.session startRunning];
+    if (self.isConfiguring) {
+      // In the middle of configuration, so dispatch another action
+      [self startSession];
+    } else {
+      // Manually restarting the session since it must have been stopped due to an error.
+      [self.session startRunning];
+    }
   });
 }
 
@@ -548,6 +538,7 @@ RCT_EXPORT_METHOD(hasFlash:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRej
     }
 
     if (captureDevice == nil) {
+      [self.session commitConfiguration];
       return;
     }
 
@@ -555,6 +546,7 @@ RCT_EXPORT_METHOD(hasFlash:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRej
 
     if (error || captureDeviceInput == nil) {
       NSLog(@"%@", error);
+      [self.session commitConfiguration];
       return;
     }
 
